@@ -740,7 +740,7 @@ function updateP2Info(){
   } else if(p2Depth<=16){
     html=`<strong style="color:var(--relu)">ReLU</strong>: <strong>100%</strong> | <strong style="color:var(--sigmoid)">Sigmoid</strong>: <strong>${fmt(sigB)}</strong> — <strong>수학적으로 피할 수 없는 한계</strong>입니다.<br>f'(x)의 최대값 자체가 0.25이므로 0.25<sup>${p2Depth}</sup> = ${sigB.toExponential(1)}. 이것이 2012년 AlexNet이 ReLU를 채택한 이유입니다.`;
   } else {
-    html=`<strong style="color:var(--sigmoid)">Sigmoid</strong>: <strong>${sigB.toExponential(1)}</strong> — 부동소수점 한계 수준.<br>${p2Depth}층에서는 ReLU도 "dying ReLU"가 발생할 수 있어 <strong>Batch Normalization</strong>, <strong>ResNet</strong>, <strong>Leaky ReLU</strong>가 필수입니다.`;
+    html=`<strong style="color:var(--sigmoid)">Sigmoid</strong>: <strong>${sigB.toExponential(1)}</strong> — 부동소수점 한계 수준.<br>${p2Depth}층에서는 ReLU도 "dying ReLU"가 발생할 수 있어 <strong>Batch Normalization</strong>, <strong>ResNet(skip connection)</strong>이 필수입니다.`;
   }
   document.getElementById('p2InfoText').innerHTML=html;
 }
