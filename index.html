@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>활성화 함수 실험실 — 공간의 휘어짐과 기울기 소실</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --bg: #f5f5f8; --bg2: #ffffff; --bg3: #eeeef2;
+  --border: #dcdce4; --text: #1a1a2e; --text2: #555; --text3: #888;
+  --accent: #e63946; --accent2: #2979ff; --shadow: rgba(0,0,0,0.06);
+  --card-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  --sigmoid: #e88c30; --tanh: #0ea47a; --relu: #e63946; --leaky: #d45a2a; --linear: #888;
+}
+[data-theme="dark"] {
+  --bg: #12121c; --bg2: #1c1c2e; --bg3: #252540;
+  --border: #333352; --text: #e8e8f0; --text2: #aaa; --text3: #777;
+  --accent: #ff6b7a; --accent2: #5c9fff; --shadow: rgba(0,0,0,0.3);
+  --card-shadow: 0 2px 16px rgba(0,0,0,0.3);
+  --sigmoid: #f4a261; --tanh: #2dd4a8; --relu: #ff6b7a; --leaky: #ff8c5a; --linear: #999;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Noto Sans KR', -apple-system, sans-serif;
+  line-height: 1.6;
+  transition: background .3s, color .3s;
+}
+
+/* Top Navigation */
+.topnav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 24px; border-bottom: 1px solid var(--border);
+  background: var(--bg2); position: sticky; top: 0; z-index: 100;
+  box-shadow: var(--card-shadow);
+}
+.topnav-title {
+  font-size: .85rem; font-weight: 700; color: var(--text);
+  display: flex; align-items: center; gap: 8px;
+}
+.topnav-title span { font-size: 1.1rem; }
+.topnav-right { display: flex; align-items: center; gap: 12px; }
+
+.theme-toggle {
+  width: 48px; height: 26px; border-radius: 13px;
+  background: var(--bg3); border: 1px solid var(--border);
+  cursor: pointer; position: relative; transition: all .3s;
+}
+.theme-toggle::after {
+  content: '☀️'; position: absolute; left: 3px; top: 2px;
+  width: 20px; height: 20px; border-radius: 10px;
+  background: var(--bg2); box-shadow: 0 1px 3px rgba(0,0,0,.2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; transition: all .3s;
+}
+[data-theme="dark"] .theme-toggle::after {
+  left: 23px; content: '🌙';
+}
+
+/* Tabs */
+.tab-bar {
+  display: flex; gap: 0; padding: 16px 24px 0;
+  max-width: 1400px; margin: 0 auto;
+}
+.tab-btn {
+  padding: 10px 28px; background: var(--bg2); color: var(--text3);
+  border: 1px solid var(--border); border-bottom: none;
+  cursor: pointer; font-size: .85rem; font-weight: 500;
+  border-radius: 10px 10px 0 0; transition: all .2s;
+  font-family: 'Noto Sans KR', sans-serif;
+}
+.tab-btn:not(:first-child) { margin-left: -1px; }
+.tab-btn:hover { color: var(--text); background: var(--bg3); }
+.tab-btn.active {
+  background: var(--bg); color: var(--text); font-weight: 700;
+  border-bottom: 2px solid var(--bg); position: relative; z-index: 1;
+}
+
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+.tab-body {
+  max-width: 1400px; margin: 0 auto;
+  border: 1px solid var(--border); border-top: none;
+  border-radius: 0 0 12px 12px; background: var(--bg);
+  padding: 24px; margin-bottom: 24px;
+}
+
+/* Controls */
+.ctrl-row {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  align-items: center; margin-bottom: 16px;
+}
+.ctrl-label {
+  font-family: 'IBM Plex Mono', monospace; font-size: .7rem;
+  color: var(--text3); text-transform: uppercase; letter-spacing: .08em;
+  margin-right: 4px;
+}
+.chip {
+  padding: 6px 16px; border-radius: 20px;
+  border: 1.5px solid var(--border); background: var(--bg2);
+  color: var(--text2); cursor: pointer;
+  font-family: 'IBM Plex Mono', monospace; font-size: .75rem;
+  transition: all .15s; font-weight: 500;
+}
+.chip:hover { border-color: var(--text3); color: var(--text); }
+.chip.active { border-color: var(--accent); background: var(--accent); color: #fff; font-weight: 600; }
+.chip.act-sigmoid.active { border-color: var(--sigmoid); background: var(--sigmoid); color: #fff; }
+.chip.act-tanh.active { border-color: var(--tanh); background: var(--tanh); color: #fff; }
+.chip.act-leaky.active { border-color: var(--leaky); background: var(--leaky); color: #fff; }
+.chip.act-linear.active { border-color: var(--linear); background: var(--linear); color: #fff; }
+
+.slider-group { display: flex; align-items: center; gap: 8px; margin-left: 12px; }
+.slider-group input[type=range] { width: 160px; accent-color: var(--accent); }
+.slider-val {
+  font-family: 'IBM Plex Mono', monospace; font-size: .85rem;
+  font-weight: 600; color: var(--text); min-width: 36px;
+}
+
+/* Grid layout */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+@media (max-width: 900px) {
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+
+.card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden;
+  box-shadow: var(--card-shadow);
+}
+.card-head {
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  font-size: .75rem; color: var(--text2); font-weight: 500;
+}
+.card-body { padding: 0; position: relative; }
+.card-body canvas { width: 100%; display: block; }
+
+.plotly-card .card-body { min-height: 380px; }
+
+/* Info box */
+.info-box {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px 20px;
+  box-shadow: var(--card-shadow);
+}
+.info-tag {
+  font-family: 'IBM Plex Mono', monospace; font-size: .62rem;
+  color: var(--accent); text-transform: uppercase; letter-spacing: .1em;
+  margin-bottom: 6px;
+}
+.info-text {
+  font-size: .85rem; color: var(--text2); line-height: 1.8; font-weight: 300;
+}
+.info-text strong { color: var(--text); font-weight: 600; }
+
+/* Meta */
+.meta-line {
+  font-family: 'IBM Plex Mono', monospace; font-size: .72rem;
+  color: var(--text3); text-align: center; padding: 6px 0;
+}
+
+/* Phase 2 specific */
+.compare-badges {
+  display: flex; gap: 8px; justify-content: center;
+  flex-wrap: wrap; margin-bottom: 12px;
+}
+.badge {
+  padding: 5px 14px; border-radius: 16px;
+  font-family: 'IBM Plex Mono', monospace; font-size: .7rem; font-weight: 600;
+}
+
+/* Footer */
+.footer-section {
+  max-width: 900px; margin: 0 auto 40px; padding: 0 24px;
+}
+.footer-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 24px 28px;
+  box-shadow: var(--card-shadow);
+}
+.footer-card h3 { font-size: 1rem; margin-bottom: 12px; }
+.footer-card p { font-size: .82rem; color: var(--text2); line-height: 1.8; }
+.footer-card p strong { color: var(--text); }
+.book-item {
+  margin-top: 10px; padding: 12px 16px;
+  background: var(--bg3); border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.book-title { font-weight: 600; font-size: .84rem; color: var(--text); }
+.book-desc { font-size: .76rem; color: var(--text3); margin-top: 3px; }
+
+.status-badge {
+  display: inline-block; padding: 3px 10px; border-radius: 10px;
+  background: var(--bg3); font-family: 'IBM Plex Mono', monospace;
+  font-size: .7rem; color: var(--text2);
+}
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="topnav-title">
+    <span>🧠</span> 활성화 함수 실험실
+  </div>
+  <div class="topnav-right">
+    <div class="theme-toggle" onclick="toggleTheme()"></div>
+  </div>
+</nav>
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab(0)">Phase 1 — 공간의 휘어짐</button>
+  <button class="tab-btn" onclick="switchTab(1)">Phase 2 — 기울기 소실</button>
+</div>
+
+<!-- ==================== PHASE 1 ==================== -->
+<div class="tab-content active" id="phase1">
+<div class="tab-body">
+
+  <div class="ctrl-row">
+    <span class="ctrl-label">활성화 함수</span>
+    <button class="chip act-linear" onclick="p1SetAct('linear')">Linear</button>
+    <button class="chip act-sigmoid" onclick="p1SetAct('sigmoid')">Sigmoid</button>
+    <button class="chip act-tanh" onclick="p1SetAct('tanh')">Tanh</button>
+    <button class="chip act-leaky" onclick="p1SetAct('leaky')">Leaky ReLU</button>
+    <button class="chip active" onclick="p1SetAct('relu')">ReLU</button>
+  </div>
+
+  <div class="ctrl-row">
+    <span class="ctrl-label">히든 뉴런 수</span>
+    <div id="p1NCtrl"></div>
+  </div>
+
+  <div class="meta-line" id="p1Meta"></div>
+  <div class="meta-line"><span class="status-badge" id="p1Status">준비</span></div>
+
+  <div class="grid-2" style="margin-top:12px;">
+    <div class="card">
+      <div class="card-head">2D 결정 경계 — 위에서 본 모습</div>
+      <div class="card-body"><canvas id="p1c2d" width="600" height="600"></canvas></div>
+    </div>
+    <div class="card plotly-card">
+      <div class="card-head">3D 출력 표면 — 공간의 휘어짐</div>
+      <div class="card-body" id="p1plot3d"></div>
+    </div>
+  </div>
+
+  <div class="info-box" style="margin-top:8px;">
+    <div class="info-tag" id="p1InfoTag">ReLU · 4개</div>
+    <div class="info-text" id="p1InfoText"></div>
+  </div>
+
+</div>
+</div>
+
+<!-- ==================== PHASE 2 ==================== -->
+<div class="tab-content" id="phase2">
+<div class="tab-body">
+
+  <div class="ctrl-row">
+    <span class="ctrl-label">레이어 수</span>
+    <div class="slider-group">
+      <input type="range" id="p2Depth" min="1" max="32" value="4">
+      <span class="slider-val" id="p2DepthVal">4층</span>
+    </div>
+  </div>
+
+  <div class="compare-badges" id="p2Badges"></div>
+
+  <div class="grid-2">
+    <div class="card plotly-card">
+      <div class="card-head">활성화 함수 f(x)</div>
+      <div class="card-body" id="p2PlotFunc"></div>
+    </div>
+    <div class="card plotly-card">
+      <div class="card-head">도함수 f'(x) — 기울기 크기의 원천</div>
+      <div class="card-body" id="p2PlotDeriv"></div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card plotly-card">
+      <div class="card-head" id="p2GradTitle">역전파 기울기: 최적 경로 vs 평균 (4층)</div>
+      <div class="card-body" id="p2PlotGrad"></div>
+    </div>
+    <div class="card plotly-card">
+      <div class="card-head">레이어별 기울기 감소 곡선 (로그 스케일)</div>
+      <div class="card-body" id="p2PlotFlow"></div>
+    </div>
+  </div>
+
+  <div class="info-box">
+    <div class="info-tag" id="p2InfoTag">4층 기울기 비교</div>
+    <div class="info-text" id="p2InfoText"></div>
+  </div>
+
+</div>
+</div>
+
+<!-- Footer -->
+<div class="footer-section">
+  <div class="footer-card">
+    <h3>📚 더 깊이 공부하려면</h3>
+    <p>이 실습의 "공간의 휘어짐"을 수학적으로 이해하려면 <strong>선형대수학</strong>(행렬의 공간 변환)과 <strong>다변수 미적분학</strong>(gradient descent)을 공부하면 됩니다.</p>
+    <div class="book-item">
+      <div class="book-title">📘 밑바닥부터 시작하는 딥러닝 — 사이토 고키</div>
+      <div class="book-desc">파이썬으로 신경망을 직접 구현하며 원리를 체감. 고등학생도 따라갈 수 있는 난이도.</div>
+    </div>
+    <div class="book-item">
+      <div class="book-title">📗 선형대수와 학습이론 (Gilbert Strang — Linear Algebra)</div>
+      <div class="book-desc">행렬 곱이 공간 변환이라는 핵심 직관. "평면이 접힌다"를 정확히 설명하는 수학.</div>
+    </div>
+    <div class="book-item">
+      <div class="book-title">🎬 3Blue1Brown — Neural Networks 시리즈 (YouTube)</div>
+      <div class="book-desc">이 실습과 같은 직관을 아름다운 애니메이션으로. 시각적 수학 설명의 끝판왕.</div>
+    </div>
+    <div class="book-item">
+      <div class="book-title">📕 Deep Learning — Goodfellow, Bengio, Courville</div>
+      <div class="book-desc">대학 수준 딥러닝 바이블. 만능 근사 정리, 최적화, 정규화를 수학적으로.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// =============== THEME ===============
+function toggleTheme(){
+  const d=document.documentElement;
+  d.dataset.theme=d.dataset.theme==='dark'?'':'dark';
+  // Re-render Plotly charts with new colors
+  if(document.getElementById('phase2').classList.contains('active')) renderP2();
+  if(p1Grid) renderP1Plot3D();
+}
+function isDark(){ return document.documentElement.dataset.theme==='dark'; }
+function C(light,dark){ return isDark()?dark:light; }
+
+// =============== TAB SWITCH ===============
+function switchTab(i){
+  document.querySelectorAll('.tab-btn').forEach((b,j)=>b.classList.toggle('active',j===i));
+  document.querySelectorAll('.tab-content').forEach((b,j)=>b.classList.toggle('active',j===i));
+  if(i===1) renderP2();
+}
+
+// =============== NEURAL NET ===============
+const ACTFNS={
+  linear:  {fn:v=>v,              dfn:v=>1},
+  sigmoid: {fn:v=>1/(1+Math.exp(-v)), dfn:function(v){const s=1/(1+Math.exp(-v));return s*(1-s);}},
+  tanh:    {fn:v=>Math.tanh(v),   dfn:v=>1-Math.tanh(v)**2},
+  leaky:   {fn:v=>v>0?v:.01*v,    dfn:v=>v>0?1:.01},
+  relu:    {fn:v=>Math.max(0,v),  dfn:v=>v>0?1:0},
+};
+
+class Net{
+  constructor(sizes,actKey){
+    this.sizes=sizes;this.actKey=actKey;
+    const a=ACTFNS[actKey];this.act=a.fn;this.dact=a.dfn.bind?a.dfn.bind(a):a.dfn;
+    this.W=[];this.b=[];
+    for(let i=0;i<sizes.length-1;i++){
+      const r=sizes[i+1],c=sizes[i],sc=Math.sqrt(2/c),w=[];
+      for(let ri=0;ri<r;ri++){const row=[];for(let ci=0;ci<c;ci++)row.push((Math.random()-.5)*2*sc);w.push(row);}
+      this.W.push(w);this.b.push(new Array(r).fill(0));
+    }
+  }
+  forward(x){
+    const acts=[x.slice()],pres=[];let a=x.slice();
+    for(let l=0;l<this.W.length;l++){
+      const w=this.W[l],b=this.b[l],z=[];
+      for(let r=0;r<w.length;r++){let s=b[r];for(let c=0;c<w[r].length;c++)s+=w[r][c]*a[c];z.push(s);}
+      pres.push(z.slice());
+      a=l<this.W.length-1?z.map(v=>this.act(v)):z;
+      acts.push(a.slice());
+    }
+    return{acts,pres};
+  }
+  predict(x){return this.forward(x).acts[this.W.length][0];}
+  train(data,ep,lr){
+    for(let e=0;e<ep;e++){
+      for(let i=data.length-1;i>0;i--){const j=0|Math.random()*(i+1);[data[i],data[j]]=[data[j],data[i]];}
+      for(const{x,y:tgt}of data){
+        const{acts,pres}=this.forward(x);const L=this.W.length;
+        let delta=[2*(acts[L][0]-tgt)];
+        for(let l=L-1;l>=0;l--){
+          const w=this.W[l],ap=acts[l];
+          if(l>0){
+            const nd=new Array(w[0].length).fill(0);
+            for(let c=0;c<w[0].length;c++){for(let r=0;r<w.length;r++)nd[c]+=w[r][c]*delta[r];nd[c]*=this.dact(pres[l-1][c]);}
+            for(let r=0;r<w.length;r++){for(let c=0;c<w[r].length;c++)w[r][c]-=lr*Math.max(-5,Math.min(5,delta[r]*ap[c]));this.b[l][r]-=lr*Math.max(-5,Math.min(5,delta[r]));}
+            delta=nd;
+          } else {
+            for(let r=0;r<w.length;r++){for(let c=0;c<w[r].length;c++)w[r][c]-=lr*Math.max(-5,Math.min(5,delta[r]*ap[c]));this.b[l][r]-=lr*Math.max(-5,Math.min(5,delta[r]));}
+          }
+        }
+      }
+    }
+  }
+}
+
+// =============== DATA ===============
+function srand(s){return()=>{s=(s*16807+7)%2147483647;return s/2147483647;}}
+const rng=srand(77);
+const pts=[];
+for(let i=0;i<120;i++){
+  const q=i%4,cx=[.28,.72,.28,.72][q],cy=[.28,.28,.72,.72][q];
+  pts.push({x:cx+(rng()-.5)*.26,y:cy+(rng()-.5)*.26,c:(q===0||q===3)?1:0});
+}
+const TD=pts.map(p=>({x:[p.x,p.y],y:p.c}));
+
+// =============== PHASE 1 ===============
+let p1Act='relu', p1N=4, p1Grid=null, p1Cache={};
+const P1_NS=[1,2,3,4,8,16,32,64];
+const GR=55;
+
+const p1Ctrl=document.getElementById('p1NCtrl');
+P1_NS.forEach(n=>{
+  const b=document.createElement('button');
+  b.className='chip'+(n===4?' active':'');
+  b.textContent=n+'개';
+  b.onclick=()=>p1SetN(n);
+  p1Ctrl.appendChild(b);
+});
+
+function p1SetAct(a){
+  p1Act=a; p1Cache={};
+  const row=document.querySelectorAll('#phase1 .ctrl-row')[0];
+  row.querySelectorAll('.chip').forEach(b=>{
+    const map={Linear:'linear',Sigmoid:'sigmoid',Tanh:'tanh','Leaky ReLU':'leaky',ReLU:'relu'};
+    b.classList.toggle('active',map[b.textContent]===a);
+  });
+  p1Run();
+}
+function p1SetN(n){
+  p1N=n;
+  p1Ctrl.querySelectorAll('.chip').forEach(b=>b.classList.toggle('active',b.textContent===n+'개'));
+  p1Run();
+}
+
+function p1Run(){
+  const key=p1Act+'_'+p1N;
+  document.getElementById('p1Status').textContent='학습 중...';
+  document.getElementById('p1Meta').textContent=`구조: 2 → ${p1N} → 1 | 활성화: ${p1Act} | 총 뉴런: ${p1N}개`;
+
+  setTimeout(()=>{
+    if(!p1Cache[key]){
+      let best=null,bLoss=1e9;
+      for(let t=0;t<6;t++){
+        const net=new Net([2,p1N,1],p1Act);
+        net.train(TD.slice(),700,.05);net.train(TD.slice(),500,.02);net.train(TD.slice(),300,.008);
+        let loss=0;for(const d of TD){loss+=(net.predict(d.x)-d.y)**2;}loss/=TD.length;
+        if(loss<bLoss){bLoss=loss;best=net;}
+      }
+      const grid=[];
+      for(let j=0;j<=GR;j++){const row=[];for(let i=0;i<=GR;i++)row.push(best.predict([i/GR,j/GR]));grid.push(row);}
+      let ok=0;for(const d of TD){if((best.predict(d.x)>.5)===(d.y===1))ok++;}
+      p1Cache[key]={grid,acc:ok/TD.length};
+    }
+    p1Grid=p1Cache[key].grid;
+    document.getElementById('p1Status').textContent=`정확도: ${(p1Cache[key].acc*100).toFixed(0)}%`;
+    renderP1_2D();
+    renderP1Plot3D();
+    updateP1Info();
+  },30);
+}
+
+function renderP1_2D(){
+  const c=document.getElementById('p1c2d'),ctx=c.getContext('2d'),W=600,H=600,g=p1Grid;
+  const RED=[230,57,70],BLUE=[41,121,255];
+  const id=ctx.createImageData(W,H);
+  for(let py=0;py<H;py++)for(let px=0;px<W;px++){
+    const gx=px/W*GR,gy=py/H*GR,gi=Math.min(0|gx,GR-1),gj=Math.min(0|gy,GR-1),fx=gx-gi,fy=gy-gj;
+    const v=g[gj][gi]*(1-fx)*(1-fy)+g[gj][gi+1]*fx*(1-fy)+g[gj+1][gi]*(1-fx)*fy+g[gj+1][gi+1]*fx*fy;
+    const sig=1/(1+Math.exp(-(v-.5)*10)),idx=(py*W+px)*4;
+    const dm=1-Math.exp(-(v-.5)*(v-.5)*40)*.3;
+    id.data[idx]=0|(RED[0]*(1-sig)+BLUE[0]*sig)*dm;
+    id.data[idx+1]=0|(RED[1]*(1-sig)+BLUE[1]*sig)*dm;
+    id.data[idx+2]=0|(RED[2]*(1-sig)+BLUE[2]*sig)*dm;
+    id.data[idx+3]=255;
+  }
+  ctx.putImageData(id,0,0);
+  // Boundary
+  ctx.strokeStyle=isDark()?'rgba(255,255,255,0.85)':'rgba(0,0,0,0.7)';ctx.lineWidth=2.5;ctx.beginPath();
+  for(let j=0;j<GR;j++)for(let i=0;i<GR;i++){
+    const th=.5,v00=g[j][i]-th,v10=g[j][i+1]-th,v01=g[j+1][i]-th,v11=g[j+1][i+1]-th,e=[];
+    if(v00*v10<0)e.push([(i+v00/(v00-v10))/GR*W,j/GR*H]);
+    if(v10*v11<0)e.push([(i+1)/GR*W,(j+v10/(v10-v11))/GR*H]);
+    if(v01*v11<0)e.push([(i+v01/(v01-v11))/GR*W,(j+1)/GR*H]);
+    if(v00*v01<0)e.push([i/GR*W,(j+v00/(v00-v01))/GR*H]);
+    if(e.length>=2){ctx.moveTo(e[0][0],e[0][1]);ctx.lineTo(e[1][0],e[1][1]);}
+  }
+  ctx.stroke();
+  // Points
+  for(const p of pts){
+    ctx.beginPath();ctx.arc(p.x*W,p.y*H,5,0,Math.PI*2);
+    ctx.fillStyle=p.c===1?'#2979ff':'#e63946';ctx.fill();
+    ctx.strokeStyle=isDark()?'rgba(0,0,0,0.5)':'rgba(255,255,255,0.7)';ctx.lineWidth=1.5;ctx.stroke();
+  }
+}
+
+function renderP1Plot3D(){
+  const g=p1Grid;if(!g)return;
+  const xs=[],ys=[],zs=[],colors=[];
+  for(let j=0;j<=GR;j++){
+    const zr=[],cr=[];
+    for(let i=0;i<=GR;i++){
+      if(j===0){xs.push(i/GR);ys.push(j/GR);}
+      zr.push(g[j][i]-.5);
+      cr.push(g[j][i]);
+    }
+    zs.push(zr);colors.push(cr);
+  }
+  const xArr=[...Array(GR+1)].map((_,i)=>i/GR);
+  const yArr=[...Array(GR+1)].map((_,j)=>j/GR);
+
+  const bg=C('#ffffff','#1c1c2e');
+  const gridC=C('#ddd','#333');
+  const textC=C('#333','#ccc');
+
+  const surface={
+    type:'surface',x:xArr,y:yArr,z:zs,
+    colorscale:[[0,'#e63946'],[0.5,'#f8f8f8'],[1,'#2979ff']],
+    surfacecolor:colors,
+    cmin:0,cmax:1,
+    opacity:0.92,
+    contours:{z:{show:true,usecolormap:true,highlightcolor:'#fff',project:{z:false}}},
+    showscale:false,
+    lighting:{ambient:0.6,diffuse:0.5,specular:0.3,roughness:0.5},
+    lightposition:{x:100,y:200,z:300},
+  };
+
+  // z=0 plane
+  const zPlane={
+    type:'surface',x:[0,1],y:[0,1],z:[[0,0],[0,0]],
+    colorscale:[[0,C('rgba(0,0,0,0.04)','rgba(255,255,255,0.04)')],[1,C('rgba(0,0,0,0.04)','rgba(255,255,255,0.04)')]],
+    showscale:false,opacity:0.3,
+  };
+
+  // Data points
+  const ptsA={type:'scatter3d',mode:'markers',
+    x:pts.filter(p=>p.c===0).map(p=>p.x),y:pts.filter(p=>p.c===0).map(p=>p.y),z:pts.filter(p=>p.c===0).map(()=>0),
+    marker:{size:4,color:'#e63946',line:{width:0.5,color:C('#fff','#000')}},showlegend:false};
+  const ptsB={type:'scatter3d',mode:'markers',
+    x:pts.filter(p=>p.c===1).map(p=>p.x),y:pts.filter(p=>p.c===1).map(p=>p.y),z:pts.filter(p=>p.c===1).map(()=>0),
+    marker:{size:4,color:'#2979ff',line:{width:0.5,color:C('#fff','#000')}},showlegend:false};
+
+  const layout={
+    paper_bgcolor:bg,plot_bgcolor:bg,
+    scene:{
+      xaxis:{title:'x₁',gridcolor:gridC,color:textC,range:[0,1]},
+      yaxis:{title:'x₂',gridcolor:gridC,color:textC,range:[0,1]},
+      zaxis:{title:'출력',gridcolor:gridC,color:textC},
+      camera:{eye:{x:1.6,y:1.6,z:1.2}},
+      aspectratio:{x:1,y:1,z:0.7},
+    },
+    margin:{l:0,r:0,t:0,b:0},
+    font:{family:'IBM Plex Mono, monospace',color:textC},
+  };
+
+  Plotly.react('p1plot3d',[surface,zPlane,ptsA,ptsB],layout,{responsive:true,displayModeBar:false});
+}
+
+const P1_DESC={
+  1:'뉴런 1개 → 꺾임 1개. 직선 하나의 꺾임으로는 XOR을 분리할 수 없습니다.',
+  2:'뉴런 2개 → 꺾임 2개. 두 방향의 접힘이 시작됩니다.',
+  3:'뉴런 3개 → 세 방향 접힘. 결정 경계가 꺾인 선이 됩니다.',
+  4:'뉴런 4개 → 네 방향 접힘. XOR을 상당히 잘 분리합니다.',
+  8:'뉴런 8개 → 촘촘한 꺾임. 경계가 <strong>곡선처럼</strong> 보입니다.',
+  16:'뉴런 16개 → <strong>거의 부드러운 곡선</strong>.',
+  32:'뉴런 32개 → <strong>매끄러운 곡면</strong>에 가깝습니다.',
+  64:'뉴런 64개 → 사실상 <strong>완벽한 곡면</strong>. 직선 조각의 합이 곡선이 되는 극한.',
+};
+function updateP1Info(){
+  const actLabel={relu:'ReLU',sigmoid:'Sigmoid',tanh:'Tanh',leaky:'Leaky ReLU',linear:'Linear'}[p1Act];
+  document.getElementById('p1InfoTag').textContent=`${actLabel} · ${p1N}개 뉴런`;
+  let desc=P1_DESC[p1N]||'';
+  if(p1Act==='linear') desc='<strong>Linear 활성화 함수</strong>는 비선형성이 없으므로 뉴런을 아무리 늘려도 출력은 평면, 결정 경계는 직선입니다. 이것이 활성화 함수가 필요한 이유입니다.';
+  else desc=desc.replace(/ReLU/g, actLabel);
+  document.getElementById('p1InfoText').innerHTML=desc;
+}
+
+// =============== PHASE 2 ===============
+const P2_ACTS=[
+  {name:'Sigmoid',color:'#e88c30',dcolor:'#f4a261',best:0.25,avg:0.20},
+  {name:'Tanh',color:'#0ea47a',dcolor:'#2dd4a8',best:1.0,avg:0.65},
+  {name:'ReLU',color:'#e63946',dcolor:'#ff6b7a',best:1.0,avg:0.5},
+  {name:'Leaky ReLU',color:'#d45a2a',dcolor:'#ff8c5a',best:1.0,avg:0.505},
+  {name:'Linear',color:'#888',dcolor:'#aaa',best:1.0,avg:1.0},
+];
+
+let p2Depth=4;
+
+document.getElementById('p2Depth').addEventListener('input',function(){
+  p2Depth=+this.value;
+  document.getElementById('p2DepthVal').textContent=p2Depth+'층';
+  renderP2();
+});
+
+function renderP2(){
+  renderP2Func();
+  renderP2Deriv();
+  renderP2Grad();
+  renderP2Flow();
+  updateP2Badges();
+  updateP2Info();
+}
+
+function renderP2Func(){
+  const bg=C('#fff','#1c1c2e'),gridC=C('#eee','#2a2a44'),textC=C('#333','#ccc');
+  const traces=[];
+  const fns={Sigmoid:x=>1/(1+Math.exp(-x)),Tanh:x=>Math.tanh(x),ReLU:x=>Math.max(0,x),'Leaky ReLU':x=>x>0?x:.01*x,Linear:x=>x};
+  P2_ACTS.forEach(a=>{
+    const xs=[],ys=[];
+    for(let x=-5;x<=5;x+=.1){xs.push(x);ys.push(Math.max(-2,Math.min(2,fns[a.name](x))));}
+    traces.push({x:xs,y:ys,name:a.name,line:{color:C(a.color,a.dcolor),width:3},mode:'lines'});
+  });
+  Plotly.react('p2PlotFunc',traces,{
+    paper_bgcolor:bg,plot_bgcolor:bg,
+    xaxis:{title:'x',gridcolor:gridC,color:textC,zerolinecolor:C('#bbb','#444')},
+    yaxis:{title:'f(x)',gridcolor:gridC,color:textC,range:[-2,2],zerolinecolor:C('#bbb','#444')},
+    margin:{l:50,r:20,t:10,b:40},
+    font:{family:'IBM Plex Mono',size:11,color:textC},
+    legend:{x:.02,y:.98,bgcolor:'rgba(0,0,0,0)',font:{size:10}},
+    showlegend:true,
+  },{responsive:true,displayModeBar:false});
+}
+
+function renderP2Deriv(){
+  const bg=C('#fff','#1c1c2e'),gridC=C('#eee','#2a2a44'),textC=C('#333','#ccc');
+  const dfns={Sigmoid:x=>{const s=1/(1+Math.exp(-x));return s*(1-s);},Tanh:x=>1-Math.tanh(x)**2,ReLU:x=>x>0?1:0,'Leaky ReLU':x=>x>0?1:.01,Linear:x=>1};
+  const traces=[];
+  P2_ACTS.forEach(a=>{
+    const xs=[],ys=[];
+    for(let x=-5;x<=5;x+=.05){xs.push(x);ys.push(dfns[a.name](x));}
+    traces.push({x:xs,y:ys,name:a.name+"'",line:{color:C(a.color,a.dcolor),width:3},mode:'lines'});
+  });
+  // Add annotation lines
+  const shapes=[
+    {type:'line',x0:-5,x1:5,y0:0.25,y1:0.25,line:{color:C('#e88c30','#f4a261'),width:1.5,dash:'dash'}},
+    {type:'line',x0:-5,x1:5,y0:1,y1:1,line:{color:C('#e63946','#ff6b7a'),width:1,dash:'dot'}},
+  ];
+  const annotations=[
+    {x:4,y:0.25,text:'Sigmoid max=0.25',showarrow:false,font:{size:10,color:C('#e88c30','#f4a261')},yshift:12},
+    {x:4,y:1,text:'ReLU 활성=1.0',showarrow:false,font:{size:10,color:C('#e63946','#ff6b7a')},yshift:12},
+  ];
+  Plotly.react('p2PlotDeriv',traces,{
+    paper_bgcolor:bg,plot_bgcolor:bg,
+    xaxis:{title:'x',gridcolor:gridC,color:textC,zerolinecolor:C('#bbb','#444')},
+    yaxis:{title:"f'(x)",gridcolor:gridC,color:textC,range:[-.05,1.15],zerolinecolor:C('#bbb','#444')},
+    margin:{l:50,r:20,t:10,b:40},shapes,annotations,
+    font:{family:'IBM Plex Mono',size:11,color:textC},
+    legend:{x:.02,y:.98,bgcolor:'rgba(0,0,0,0)',font:{size:10}},showlegend:true,
+  },{responsive:true,displayModeBar:false});
+}
+
+function renderP2Grad(){
+  const bg=C('#fff','#1c1c2e'),gridC=C('#eee','#2a2a44'),textC=C('#333','#ccc');
+  document.getElementById('p2GradTitle').textContent=`역전파 기울기: 최적 경로 vs 평균 (${p2Depth}층)`;
+  const cats=[],bestVals=[],avgVals=[],bestColors=[],avgColors=[];
+  P2_ACTS.forEach(a=>{
+    cats.push(a.name);
+    bestVals.push(Math.pow(a.best,p2Depth)*100);
+    avgVals.push(Math.pow(a.avg,p2Depth)*100);
+    bestColors.push(C(a.color,a.dcolor));
+    avgColors.push(C(a.color+'88',a.dcolor+'88'));
+  });
+  const fmtText=arr=>arr.map(v=>v>=1?v.toFixed(1)+'%':v>=0.01?v.toFixed(2)+'%':v>0?v.toExponential(0)+'%':'0%');
+  Plotly.react('p2PlotGrad',[
+    {x:cats,y:bestVals,name:'최적 경로',type:'bar',marker:{color:bestColors},text:fmtText(bestVals),textposition:'outside',textfont:{size:10}},
+    {x:cats,y:avgVals,name:'평균',type:'bar',marker:{color:avgColors},text:fmtText(avgVals),textposition:'outside',textfont:{size:10}},
+  ],{
+    paper_bgcolor:bg,plot_bgcolor:bg,barmode:'group',
+    yaxis:{title:'입력층 도달 기울기 (%)',type:'log',gridcolor:gridC,color:textC,dtick:1},
+    xaxis:{color:textC},
+    margin:{l:60,r:20,t:20,b:40},
+    font:{family:'IBM Plex Mono',size:11,color:textC},
+    legend:{x:.7,y:.98,font:{size:10}},
+  },{responsive:true,displayModeBar:false});
+}
+
+function renderP2Flow(){
+  const bg=C('#fff','#1c1c2e'),gridC=C('#eee','#2a2a44'),textC=C('#333','#ccc');
+  const traces=[];
+  P2_ACTS.forEach(a=>{
+    const xs=[],yBest=[],yAvg=[];
+    for(let l=0;l<=p2Depth;l++){
+      xs.push(l);
+      yBest.push(Math.max(1e-15,Math.pow(a.best,l)*100));
+      yAvg.push(Math.max(1e-15,Math.pow(a.avg,l)*100));
+    }
+    traces.push({x:xs,y:yBest,name:a.name+' (최적)',line:{color:C(a.color,a.dcolor),width:3},mode:'lines+markers',marker:{size:5}});
+    traces.push({x:xs,y:yAvg,name:a.name+' (평균)',line:{color:C(a.color,a.dcolor),width:2,dash:'dash'},mode:'lines',opacity:0.5});
+  });
+  const shapes=[{
+    type:'rect',x0:0,x1:p2Depth,y0:1e-15,y1:0.01,
+    fillcolor:C('rgba(230,57,70,0.06)','rgba(255,100,100,0.06)'),
+    line:{width:0},layer:'below',
+  },{
+    type:'line',x0:0,x1:p2Depth,y0:0.01,y1:0.01,
+    line:{color:C('rgba(230,57,70,0.3)','rgba(255,100,100,0.3)'),width:1.5,dash:'dash'},
+  }];
+  const annotations=[{
+    x:p2Depth*.6,y:Math.log10(0.005),text:'← 학습 불가능 (0.01% 이하)',
+    showarrow:false,font:{size:10,color:C('rgba(230,57,70,0.5)','rgba(255,100,100,0.5)')},
+  }];
+  Plotly.react('p2PlotFlow',traces,{
+    paper_bgcolor:bg,plot_bgcolor:bg,
+    xaxis:{title:'역전파 통과 레이어 수',gridcolor:gridC,color:textC,dtick:p2Depth<=8?1:p2Depth<=16?2:4},
+    yaxis:{title:'기울기 크기 (%)',type:'log',gridcolor:gridC,color:textC},
+    margin:{l:60,r:20,t:10,b:45},shapes,annotations,
+    font:{family:'IBM Plex Mono',size:11,color:textC},
+    legend:{x:.02,y:.02,bgcolor:'rgba(0,0,0,0)',font:{size:9}},
+  },{responsive:true,displayModeBar:false});
+}
+
+function updateP2Badges(){
+  const el=document.getElementById('p2Badges');el.innerHTML='';
+  P2_ACTS.forEach(a=>{
+    const grad=Math.pow(a.best,p2Depth)*100;
+    const txt=grad>=99.5?'100%':grad>=1?grad.toFixed(0)+'%':grad>=.01?grad.toFixed(2)+'%':grad>0?grad.toExponential(0)+'%':'0%';
+    const b=document.createElement('span');
+    b.className='badge';
+    b.style.background=C(a.color,a.dcolor);
+    b.style.color=a.name==='Linear'||a.name==='Sigmoid'?C('#fff','#fff'):'#fff';
+    b.textContent=`${a.name} 최적: ${txt}`;
+    el.appendChild(b);
+  });
+}
+
+function updateP2Info(){
+  const sigB=Math.pow(0.25,p2Depth),sigA=Math.pow(0.2,p2Depth);
+  const fmt=v=>{const p=v*100;return p>=99.5?'100%':p>=1?p.toFixed(0)+'%':p>=.01?p.toFixed(2)+'%':p>0?p.toExponential(1)+'%':'0%';};
+  document.getElementById('p2InfoTag').textContent=`${p2Depth}층 기울기 비교`;
+  let html='';
+  if(p2Depth<=2){
+    html=`<strong style="color:var(--relu)">ReLU</strong> 활성 경로: <strong>100%</strong> | <strong style="color:var(--sigmoid)">Sigmoid</strong> 최적: <strong>${fmt(sigB)}</strong><br>${p2Depth}층에서는 Sigmoid도 학습 가능하지만, 이미 ReLU와 4배 차이가 납니다.`;
+  } else if(p2Depth<=6){
+    html=`<strong style="color:var(--relu)">ReLU</strong> 활성 경로: <strong>100%</strong> (손실 없음!) | <strong style="color:var(--sigmoid)">Sigmoid</strong> 최적: <strong>${fmt(sigB)}</strong><br>핵심: ReLU는 양수 입력에서 f'(x)=<strong>정확히 1</strong>이라 살아있는 뉴런을 따라가면 기울기가 <strong>전혀 줄지 않습니다</strong>. Sigmoid는 <strong>어떤 경로든</strong> 매 레이어마다 최대 ×0.25.`;
+  } else if(p2Depth<=16){
+    html=`<strong style="color:var(--relu)">ReLU</strong>: <strong>100%</strong> | <strong style="color:var(--sigmoid)">Sigmoid</strong>: <strong>${fmt(sigB)}</strong> — <strong>수학적으로 피할 수 없는 한계</strong>입니다.<br>f'(x)의 최대값 자체가 0.25이므로 0.25<sup>${p2Depth}</sup> = ${sigB.toExponential(1)}. 이것이 2012년 AlexNet이 ReLU를 채택한 이유입니다.`;
+  } else {
+    html=`<strong style="color:var(--sigmoid)">Sigmoid</strong>: <strong>${sigB.toExponential(1)}</strong> — 부동소수점 한계 수준.<br>${p2Depth}층에서는 ReLU도 "dying ReLU"가 발생할 수 있어 <strong>Batch Normalization</strong>, <strong>ResNet</strong>, <strong>Leaky ReLU</strong>가 필수입니다.`;
+  }
+  document.getElementById('p2InfoText').innerHTML=html;
+}
+
+// =============== INIT ===============
+p1Run();
+// Delay P2 render until tab is shown
+</script>
+</body>
+</html>
