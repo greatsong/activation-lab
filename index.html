@@ -223,12 +223,27 @@ body {
 <div class="tab-body">
 
   <div class="ctrl-row">
+    <span class="ctrl-label">데이터셋</span>
+    <button class="chip active" onclick="p1SetData('xor')">XOR</button>
+    <button class="chip" onclick="p1SetData('circles')">동심원</button>
+    <button class="chip" onclick="p1SetData('spiral')">스파이럴</button>
+    <button class="chip" onclick="p1SetData('checker')">체커보드</button>
+  </div>
+
+  <div class="ctrl-row">
     <span class="ctrl-label">활성화 함수</span>
     <button class="chip act-linear" onclick="p1SetAct('linear')">Linear</button>
     <button class="chip act-sigmoid" onclick="p1SetAct('sigmoid')">Sigmoid</button>
     <button class="chip act-tanh" onclick="p1SetAct('tanh')">Tanh</button>
     <button class="chip act-leaky" onclick="p1SetAct('leaky')">Leaky ReLU</button>
     <button class="chip active" onclick="p1SetAct('relu')">ReLU</button>
+  </div>
+
+  <div class="ctrl-row">
+    <span class="ctrl-label">히든 레이어</span>
+    <button class="chip active" onclick="p1SetL(1)">1층</button>
+    <button class="chip" onclick="p1SetL(2)">2층</button>
+    <button class="chip" onclick="p1SetL(3)">3층</button>
   </div>
 
   <div class="ctrl-row">
@@ -253,6 +268,19 @@ body {
   <div class="info-box" style="margin-top:8px;">
     <div class="info-tag" id="p1InfoTag">ReLU · 4개</div>
     <div class="info-text" id="p1InfoText"></div>
+  </div>
+
+  <div class="info-box" style="margin-top:12px; border-left: 3px solid var(--accent2);">
+    <div class="info-tag" style="color:var(--accent2)">Universal Approximation Theorem</div>
+    <div class="info-text">
+      <strong>히든 레이어 1개</strong>만으로 뉴런 수가 충분하면 <strong>어떤 연속 함수든 원하는 정밀도로 근사</strong>할 수 있습니다.
+      위 실험에서 뉴런 수를 1 → 64로 늘려보면 이 정리를 직접 체감할 수 있습니다.
+      <br><br>
+      <span style="font-size:.78rem; color:var(--text3);">
+        <strong>Cybenko, G.</strong> (1989). "Approximation by superpositions of a sigmoidal function." <em>Mathematics of Control, Signals and Systems</em>, 2(4), 303–314.<br>
+        <strong>Hornik, K., Stinchcombe, M., & White, H.</strong> (1989). "Multilayer feedforward networks are universal approximators." <em>Neural Networks</em>, 2(5), 359–366.
+      </span>
+    </div>
   </div>
 
 </div>
@@ -402,15 +430,84 @@ class Net{
 // =============== DATA ===============
 function srand(s){return()=>{s=(s*16807+7)%2147483647;return s/2147483647;}}
 const rng=srand(77);
-const pts=[];
-for(let i=0;i<120;i++){
-  const q=i%4,cx=[.28,.72,.28,.72][q],cy=[.28,.28,.72,.72][q];
-  pts.push({x:cx+(rng()-.5)*.26,y:cy+(rng()-.5)*.26,c:(q===0||q===3)?1:0});
+
+function genXOR(){
+  const p=[];
+  for(let i=0;i<120;i++){
+    const q=i%4,cx=[.28,.72,.28,.72][q],cy=[.28,.28,.72,.72][q];
+    p.push({x:cx+(rng()-.5)*.26,y:cy+(rng()-.5)*.26,c:(q===0||q===3)?1:0});
+  }
+  return p;
 }
-const TD=pts.map(p=>({x:[p.x,p.y],y:p.c}));
+function genSpiral(){
+  const p=[],r2=srand(42);
+  const n=80;
+  for(let i=0;i<n;i++){
+    const t=i/n*3*Math.PI+0.3;
+    const r=0.12+0.32*(i/n);
+    const nx=r2()*.06-.03, ny=r2()*.06-.03;
+    p.push({x:0.5+r*Math.cos(t)+nx, y:0.5+r*Math.sin(t)+ny, c:0});
+    p.push({x:0.5-r*Math.cos(t)+nx, y:0.5-r*Math.sin(t)+ny, c:1});
+  }
+  return p;
+}
+function genCircles(){
+  const p=[],r2=srand(99);
+  for(let i=0;i<80;i++){
+    const a=r2()*Math.PI*2, r=0.08+r2()*0.1;
+    p.push({x:0.5+r*Math.cos(a), y:0.5+r*Math.sin(a), c:1});
+  }
+  for(let i=0;i<80;i++){
+    const a=r2()*Math.PI*2, r=0.3+r2()*0.12;
+    p.push({x:0.5+r*Math.cos(a), y:0.5+r*Math.sin(a), c:0});
+  }
+  return p;
+}
+
+function genChecker(){
+  const p=[],r2=srand(55);
+  for(let row=0;row<4;row++)for(let col=0;col<4;col++){
+    const cls=(row+col)%2;
+    for(let k=0;k<8;k++){
+      p.push({x:(col+0.15+r2()*0.7)/4, y:(row+0.15+r2()*0.7)/4, c:cls});
+    }
+  }
+  return p;
+}
+
+const DATASETS={circles:genCircles, xor:genXOR, spiral:genSpiral, checker:genChecker};
+let curDataKey='xor';
+let pts=genXOR();
+let TD=pts.map(p=>({x:[p.x,p.y],y:p.c}));
+
+// 체커보드/스파이럴은 더 많은 에포크 필요
+function trainEpochs(){ return curDataKey==='checker'?{e1:1500,e2:1000,e3:600}:curDataKey==='spiral'?{e1:1200,e2:800,e3:500}:{e1:700,e2:500,e3:300}; }
 
 // =============== PHASE 1 ===============
-let p1Act='relu', p1N=4, p1Grid=null, p1Cache={};
+let p1Act='relu', p1N=4, p1L=1, p1Grid=null, p1Cache={};
+
+function p1SetL(l){
+  p1L=l; p1Cache={};
+  const row=document.querySelectorAll('#phase1 .ctrl-row')[2];
+  row.querySelectorAll('.chip').forEach(b=>{
+    const map={'1층':1,'2층':2,'3층':3};
+    b.classList.toggle('active',map[b.textContent]===l);
+  });
+  p1Run();
+}
+
+function p1SetData(key){
+  curDataKey=key;
+  pts=DATASETS[key]();
+  TD=pts.map(p=>({x:[p.x,p.y],y:p.c}));
+  p1Cache={};
+  const row=document.querySelectorAll('#phase1 .ctrl-row')[0];
+  row.querySelectorAll('.chip').forEach(b=>{
+    const map={'동심원':'circles',XOR:'xor','스파이럴':'spiral','체커보드':'checker'};
+    b.classList.toggle('active',map[b.textContent]===key);
+  });
+  p1Run();
+}
 const P1_NS=[1,2,3,4,8,16,32,64];
 const GR=55;
 
@@ -439,16 +536,19 @@ function p1SetN(n){
 }
 
 function p1Run(){
-  const key=p1Act+'_'+p1N;
+  const key=p1Act+'_'+p1N+'_'+p1L;
   document.getElementById('p1Status').textContent='학습 중...';
-  document.getElementById('p1Meta').textContent=`구조: 2 → ${p1N} → 1 | 활성화: ${p1Act} | 총 뉴런: ${p1N}개`;
+  const arch=['2',...Array(p1L).fill(p1N),'1'].join(' → ');
+  document.getElementById('p1Meta').textContent=`구조: ${arch} | 활성화: ${p1Act} | 히든 레이어: ${p1L}층 × ${p1N}개`;
 
   setTimeout(()=>{
     if(!p1Cache[key]){
       let best=null,bLoss=1e9;
       for(let t=0;t<6;t++){
-        const net=new Net([2,p1N,1],p1Act);
-        net.train(TD.slice(),700,.05);net.train(TD.slice(),500,.02);net.train(TD.slice(),300,.008);
+        const sizes=[2,...Array(p1L).fill(p1N),1];
+        const net=new Net(sizes,p1Act);
+        const ep=trainEpochs();
+        net.train(TD.slice(),ep.e1,.05);net.train(TD.slice(),ep.e2,.02);net.train(TD.slice(),ep.e3,.008);
         let loss=0;for(const d of TD){loss+=(net.predict(d.x)-d.y)**2;}loss/=TD.length;
         if(loss<bLoss){bLoss=loss;best=net;}
       }
@@ -573,9 +673,12 @@ const P1_DESC={
 };
 function updateP1Info(){
   const actLabel={relu:'ReLU',sigmoid:'Sigmoid',tanh:'Tanh',leaky:'Leaky ReLU',linear:'Linear'}[p1Act];
-  document.getElementById('p1InfoTag').textContent=`${actLabel} · ${p1N}개 뉴런`;
+  document.getElementById('p1InfoTag').textContent=`${actLabel} · ${p1L}층 × ${p1N}개 뉴런`;
   let desc=P1_DESC[p1N]||'';
   if(p1Act==='linear') desc='<strong>Linear 활성화 함수</strong>는 비선형성이 없으므로 뉴런을 아무리 늘려도 출력은 평면, 결정 경계는 직선입니다. 이것이 활성화 함수가 필요한 이유입니다.';
+  else if(curDataKey==='spiral') desc=`<strong>스파이럴 데이터</strong>: 두 나선이 꼬여 있어 단순한 직선으로는 절대 분리 불가능합니다. ${p1N>=8?'뉴런 '+p1N+'개로 나선을 따라가는 복잡한 경계가 형성됩니다.':'뉴런이 부족해 나선의 곡률을 충분히 표현하지 못합니다. 뉴런 수를 늘려보세요.'}`;
+  else if(curDataKey==='circles') desc=`<strong>동심원 데이터</strong>: 안쪽 원과 바깥쪽 링을 분리해야 합니다. ${p1N>=4?'활성화 함수가 공간을 접어 원형 경계를 만듭니다.':'뉴런이 부족해 원형 경계를 근사하기 어렵습니다.'}`;
+  else if(curDataKey==='checker') desc=`<strong>체커보드 데이터</strong>: 4×4 격자의 체스판 패턴. XOR의 확장판으로, ${p1N>=16?'뉴런 '+p1N+'개로 복잡한 격자 경계를 형성합니다.':p1N>=8?'8개 이상의 꺾임으로 격자 패턴을 근사하기 시작합니다.':'뉴런이 부족합니다. 16개 이상 필요합니다.'}`;
   else desc=desc.replace(/ReLU/g, actLabel);
   document.getElementById('p1InfoText').innerHTML=desc;
 }
