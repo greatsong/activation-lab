@@ -254,6 +254,19 @@ body {
   <div class="meta-line" id="p1Meta"></div>
   <div class="meta-line"><span class="status-badge" id="p1Status">준비</span></div>
 
+  <div style="text-align:center;margin:8px 0;">
+    <canvas id="p1NetVis" width="400" height="100" style="cursor:pointer;border:1px solid var(--border);border-radius:8px;background:var(--bg2);max-width:100%;" onclick="openNetModal()"></canvas>
+    <div style="font-size:.65rem;color:var(--text3);margin-top:2px;">클릭하면 확대</div>
+  </div>
+
+  <div id="netModal" style="display:none;position:fixed;inset:0;z-index:999;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;cursor:pointer;" onclick="closeNetModal()">
+    <div style="background:var(--bg2);border-radius:12px;padding:24px;max-width:95vw;max-height:90vh;position:relative;" onclick="event.stopPropagation()">
+      <div style="text-align:right;"><button onclick="closeNetModal()" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:var(--text);">✕</button></div>
+      <canvas id="p1NetVisFull" width="900" height="500" style="width:100%;"></canvas>
+      <div id="netModalInfo" style="text-align:center;margin-top:12px;font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--text2);"></div>
+    </div>
+  </div>
+
   <div class="grid-2" style="margin-top:12px;">
     <div class="card">
       <div class="card-head">2D 결정 경계 — 위에서 본 모습</div>
@@ -539,7 +552,10 @@ function p1Run(){
   const key=p1Act+'_'+p1N+'_'+p1L;
   document.getElementById('p1Status').textContent='학습 중...';
   const arch=['2',...Array(p1L).fill(p1N),'1'].join(' → ');
-  document.getElementById('p1Meta').textContent=`구조: ${arch} | 활성화: ${p1Act} | 히든 레이어: ${p1L}층 × ${p1N}개`;
+  const sizes=[2,...Array(p1L).fill(p1N),1];
+  let totalW=0,totalB=0; const details=[];
+  for(let i=0;i<sizes.length-1;i++){const w=sizes[i]*sizes[i+1],b=sizes[i+1];totalW+=w;totalB+=b;details.push(`${sizes[i]}×${sizes[i+1]}=${w}W+${b}b`);}
+  document.getElementById('p1Meta').textContent=`구조: ${arch} | ${details.join(', ')} | 총 ${totalW}W + ${totalB}b = ${totalW+totalB}개`;
 
   setTimeout(()=>{
     if(!p1Cache[key]){
@@ -561,9 +577,97 @@ function p1Run(){
     document.getElementById('p1Status').textContent=`정확도: ${(p1Cache[key].acc*100).toFixed(0)}%`;
     renderP1_2D();
     renderP1Plot3D();
+    renderNetVis('p1NetVis');
     updateP1Info();
   },30);
 }
+
+// =============== NETWORK VISUALIZATION ===============
+function renderNetVis(canvasId){
+  const c=document.getElementById(canvasId);if(!c)return;
+  const ctx=c.getContext('2d');
+  const W=c.width,H=c.height;
+  const sizes=[2,...Array(p1L).fill(p1N),1];
+  const layers=sizes.length;
+  const maxN=Math.max(...sizes);
+  const isFull=canvasId==='p1NetVisFull';
+  const padX=isFull?80:40, padY=isFull?40:15;
+
+  ctx.clearRect(0,0,W,H);
+
+  // positions
+  const pos=[];
+  for(let l=0;l<layers;l++){
+    const x=padX+(W-2*padX)*l/(layers-1);
+    const col=[];
+    const n=sizes[l];
+    const gap=Math.min((H-2*padY)/(Math.max(n,1)),isFull?40:16);
+    const startY=H/2-(n-1)*gap/2;
+    for(let i=0;i<n;i++) col.push({x,y:startY+i*gap});
+    pos.push(col);
+  }
+
+  // connections
+  for(let l=0;l<layers-1;l++){
+    const from=pos[l],to=pos[l+1];
+    for(let i=0;i<from.length;i++){
+      for(let j=0;j<to.length;j++){
+        ctx.beginPath();
+        ctx.moveTo(from[i].x,from[i].y);
+        ctx.lineTo(to[j].x,to[j].y);
+        ctx.strokeStyle=isDark()?'rgba(255,255,255,0.12)':'rgba(0,0,0,0.08)';
+        ctx.lineWidth=isFull?1.2:0.7;
+        ctx.stroke();
+      }
+    }
+  }
+
+  // nodes
+  const nodeR=isFull?12:5;
+  const colors=[
+    isDark()?'#5c9fff':'#2979ff',
+    ...Array(p1L).fill(isDark()?'#ff6b7a':'#e63946'),
+    isDark()?'#2dd4a8':'#0ea47a'
+  ];
+  for(let l=0;l<layers;l++){
+    for(const p of pos[l]){
+      ctx.beginPath();ctx.arc(p.x,p.y,nodeR,0,Math.PI*2);
+      ctx.fillStyle=colors[l];ctx.fill();
+      ctx.strokeStyle=isDark()?'rgba(0,0,0,0.3)':'rgba(255,255,255,0.8)';
+      ctx.lineWidth=isFull?2:1;ctx.stroke();
+    }
+  }
+
+  // labels
+  if(isFull){
+    ctx.font='600 13px IBM Plex Mono';ctx.textAlign='center';
+    const labels=['입력','히든','출력'];
+    for(let l=0;l<layers;l++){
+      const lbl=l===0?'입력 (2)':l===layers-1?'출력 (1)':`히든${p1L>1?' '+(l):''}  (${sizes[l]})`;
+      ctx.fillStyle=isDark()?'#ccc':'#555';
+      ctx.fillText(lbl,pos[l][0].x,H-10);
+    }
+    // param counts per layer
+    ctx.font='500 11px IBM Plex Mono';
+    for(let l=0;l<layers-1;l++){
+      const mx=(pos[l][0].x+pos[l+1][0].x)/2;
+      const w=sizes[l]*sizes[l+1],b=sizes[l+1];
+      ctx.fillStyle=isDark()?'#888':'#999';
+      ctx.fillText(`${w}W+${b}b`,mx,18);
+    }
+  }
+}
+
+function openNetModal(){
+  const m=document.getElementById('netModal');
+  m.style.display='flex';
+  renderNetVis('p1NetVisFull');
+  const sizes=[2,...Array(p1L).fill(p1N),1];
+  let totalW=0,totalB=0;
+  for(let i=0;i<sizes.length-1;i++){totalW+=sizes[i]*sizes[i+1];totalB+=sizes[i+1];}
+  document.getElementById('netModalInfo').textContent=`${sizes.join(' → ')} | 가중치 ${totalW}개 + 편향 ${totalB}개 = 파라미터 ${totalW+totalB}개`;
+}
+function closeNetModal(){document.getElementById('netModal').style.display='none';}
 
 function renderP1_2D(){
   const c=document.getElementById('p1c2d'),ctx=c.getContext('2d'),W=600,H=600,g=p1Grid;
