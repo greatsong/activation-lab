@@ -372,9 +372,13 @@ body {
 function toggleTheme(){
   const d=document.documentElement;
   d.dataset.theme=d.dataset.theme==='dark'?'':'dark';
-  // Re-render Plotly charts with new colors
+  // Re-render all charts with new colors
   if(document.getElementById('phase2').classList.contains('active')) renderP2();
-  if(p1Grid) renderP1Plot3D();
+  if(p1Grid){
+    renderP1_2D();
+    renderP1Plot3D();
+    renderNetVis('p1NetVis');
+  }
 }
 function isDark(){ return document.documentElement.dataset.theme==='dark'; }
 function C(light,dark){ return isDark()?dark:light; }
@@ -535,7 +539,7 @@ P1_NS.forEach(n=>{
 
 function p1SetAct(a){
   p1Act=a; p1Cache={};
-  const row=document.querySelectorAll('#phase1 .ctrl-row')[0];
+  const row=document.querySelectorAll('#phase1 .ctrl-row')[1];
   row.querySelectorAll('.chip').forEach(b=>{
     const map={Linear:'linear',Sigmoid:'sigmoid',Tanh:'tanh','Leaky ReLU':'leaky',ReLU:'relu'};
     b.classList.toggle('active',map[b.textContent]===a);
@@ -548,7 +552,9 @@ function p1SetN(n){
   p1Run();
 }
 
-function p1Run(){
+let p1RunId=0;
+async function p1Run(){
+  const runId=++p1RunId;
   const key=p1Act+'_'+p1N+'_'+p1L;
   document.getElementById('p1Status').textContent='학습 중...';
   const arch=['2',...Array(p1L).fill(p1N),'1'].join(' → ');
@@ -557,29 +563,35 @@ function p1Run(){
   for(let i=0;i<sizes.length-1;i++){const w=sizes[i]*sizes[i+1],b=sizes[i+1];totalW+=w;totalB+=b;details.push(`${sizes[i]}×${sizes[i+1]}=${w}W+${b}b`);}
   document.getElementById('p1Meta').textContent=`구조: ${arch} | ${details.join(', ')} | 총 ${totalW}W + ${totalB}b = ${totalW+totalB}개`;
 
-  setTimeout(()=>{
-    if(!p1Cache[key]){
-      let best=null,bLoss=1e9;
-      for(let t=0;t<6;t++){
-        const sizes=[2,...Array(p1L).fill(p1N),1];
-        const net=new Net(sizes,p1Act);
-        const ep=trainEpochs();
-        net.train(TD.slice(),ep.e1,.05);net.train(TD.slice(),ep.e2,.02);net.train(TD.slice(),ep.e3,.008);
-        let loss=0;for(const d of TD){loss+=(net.predict(d.x)-d.y)**2;}loss/=TD.length;
-        if(loss<bLoss){bLoss=loss;best=net;}
-      }
-      const grid=[];
-      for(let j=0;j<=GR;j++){const row=[];for(let i=0;i<=GR;i++)row.push(best.predict([i/GR,j/GR]));grid.push(row);}
-      let ok=0;for(const d of TD){if((best.predict(d.x)>.5)===(d.y===1))ok++;}
-      p1Cache[key]={grid,acc:ok/TD.length};
+  await new Promise(r=>setTimeout(r,10));
+  if(runId!==p1RunId) return;
+
+  if(!p1Cache[key]){
+    let best=null,bLoss=1e9;
+    for(let t=0;t<6;t++){
+      if(runId!==p1RunId) return;
+      const sizes=[2,...Array(p1L).fill(p1N),1];
+      const net=new Net(sizes,p1Act);
+      const ep=trainEpochs();
+      net.train(TD.slice(),ep.e1,.05);net.train(TD.slice(),ep.e2,.02);net.train(TD.slice(),ep.e3,.008);
+      let loss=0;for(const d of TD){loss+=(net.predict(d.x)-d.y)**2;}loss/=TD.length;
+      if(loss<bLoss){bLoss=loss;best=net;}
+      document.getElementById('p1Status').textContent=`학습 중... (${t+1}/6)`;
+      await new Promise(r=>setTimeout(r,0));
     }
-    p1Grid=p1Cache[key].grid;
-    document.getElementById('p1Status').textContent=`정확도: ${(p1Cache[key].acc*100).toFixed(0)}%`;
-    renderP1_2D();
-    renderP1Plot3D();
-    renderNetVis('p1NetVis');
-    updateP1Info();
-  },30);
+    if(runId!==p1RunId) return;
+    const grid=[];
+    for(let j=0;j<=GR;j++){const row=[];for(let i=0;i<=GR;i++)row.push(best.predict([i/GR,j/GR]));grid.push(row);}
+    let ok=0;for(const d of TD){if((best.predict(d.x)>.5)===(d.y===1))ok++;}
+    p1Cache[key]={grid,acc:ok/TD.length};
+  }
+  if(runId!==p1RunId) return;
+  p1Grid=p1Cache[key].grid;
+  document.getElementById('p1Status').textContent=`정확도: ${(p1Cache[key].acc*100).toFixed(0)}%`;
+  renderP1_2D();
+  renderP1Plot3D();
+  renderNetVis('p1NetVis');
+  updateP1Info();
 }
 
 // =============== NETWORK VISUALIZATION ===============
