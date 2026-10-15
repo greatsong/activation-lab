@@ -965,7 +965,17 @@ function updateP2Info(){
 }
 
 // =============== INIT ===============
-p1Run();
+// 주소의 설정값으로 시작한다: #data=circles&act=linear&L=1&n=4 (특강 슬라이드 "활성화 함수 실험실 세 장면"에서 사용)
+(function(){
+  const q=new URLSearchParams(location.hash.replace(/^#\/?/,''));
+  const data=q.get('data'), act=q.get('act'), L=+q.get('L'), n=+q.get('n');
+  let applied=false;
+  if(data && DATASETS[data]){ p1SetData(data); applied=true; }
+  if(act && ['linear','sigmoid','tanh','leaky','relu'].includes(act)){ p1SetAct(act); applied=true; }
+  if([1,2,3].includes(L)){ p1SetL(L); applied=true; }
+  if(P1_NS.includes(n)){ p1SetN(n); applied=true; }
+  if(!applied) p1Run();
+})();
 // Delay P2 render until tab is shown
 </script>
 </body>
